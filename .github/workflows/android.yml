@@ -1,4 +1,4 @@
- 
+
 name: Build AutoVPN APK
 
 on:
@@ -37,6 +37,38 @@ jobs:
           unzip -o AutoVPN-0.3.6.zip
           test -f AutoVPN/settings.gradle.kts
           test -f AutoVPN/app/build.gradle.kts
+
+      - name: Fix WireGuard manifest merge
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          manifest = Path("AutoVPN/app/src/main/AndroidManifest.xml")
+          content = manifest.read_text()
+
+          if "xmlns:tools=" not in content:
+              content = content.replace(
+                  "<manifest ",
+                  '<manifest xmlns:tools="http://schemas.android.com/tools" ',
+                  1
+              )
+
+          pattern = r'(<service\b(?=[^>]*android:name=["\']com\.wireguard\.android\.backend\.GoBackend\$VpnService["\'])[^>]*)(>)'
+          content, count = re.subn(
+              pattern,
+              lambda m: m.group(1) + ' tools:replace="android:exported"' + m.group(2),
+              content,
+              count=1,
+              flags=re.S
+          )
+
+          if count != 1:
+              raise SystemExit("Could not find WireGuard VpnService declaration")
+
+          manifest.write_text(content)
+          print("WireGuard manifest fixed")
+          PY
 
       - name: Build debug APK
         run: gradle -p AutoVPN assembleDebug --stacktrace
